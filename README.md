@@ -1,56 +1,47 @@
 # api-gateway-service
 
-Reusable Terraform module for creating AWS API Gateway REST API service endpoints with Lambda (AWS_PROXY) integration and CORS support.
+Reusable Terraform module that creates a complete AWS API Gateway REST API stack with Lambda (AWS_PROXY) integration, CORS, authorization, logging, and throttling.
 
 ## What it creates
 
-Per service invocation:
-- 1 parent API Gateway resource (e.g., `/user`)
-- Per endpoint: child resource, HTTP method, Lambda integration, OPTIONS preflight with CORS headers, and Lambda invoke permission
+- REST API Gateway with configurable endpoint type
+- Lambda authorizer (when using CUSTOM auth)
+- CloudWatch log group for access logs
+- Stage and auto-deploying deployment
+- Method settings (logging, metrics, throttling)
+- Gateway responses for 4XX/5XX with CORS headers
+- Per-service parent resources with child endpoints
+- OPTIONS preflight handlers with CORS on every endpoint
+- Lambda invoke permissions for all endpoints
 
 ## Usage
 
 ```hcl
-module "user_api" {
-  source = "git::https://github.com/domgiordano/api-gateway-service.git?ref=v1.0.0"
+module "api" {
+  source = "git::https://github.com/domgiordano/api-gateway-service.git?ref=v2.0.0"
 
-  rest_api_id      = aws_api_gateway_rest_api.api.id
-  root_resource_id = aws_api_gateway_rest_api.api.root_resource_id
-  path_prefix      = "user"
-  authorizer_id    = aws_api_gateway_authorizer.auth.id
-  execution_arn    = aws_api_gateway_rest_api.api.execution_arn
+  app_name              = "myapp"
+  stage_name            = "dev"
+  authorizer_invoke_arn = aws_lambda_function.authorizer.invoke_arn
+  authorizer_role_arn   = aws_iam_role.lambda_role.arn
+  tags                  = { source = "terraform", app_name = "myapp" }
 
-  endpoints = [
-    {
-      name        = "update"
-      path_part   = "update"
-      http_method = "POST"
-      invoke_arn  = aws_lambda_function.user["update"].invoke_arn
-    },
-    {
-      name        = "all"
-      path_part   = "all"
-      http_method = "GET"
-      invoke_arn  = aws_lambda_function.user["all"].invoke_arn
-    },
-  ]
-}
-```
-
-### Multiple services with `for_each`
-
-```hcl
-locals {
-  api_services = {
+  services = {
     user = {
       path_prefix = "user"
       endpoints = [
-        for l in local.user_lambdas : {
-          name        = l.name
-          path_part   = l.path_part
-          http_method = l.http_method
-          invoke_arn  = aws_lambda_function.user[l.name].invoke_arn
-        }
+        {
+          name        = "update"
+          path_part   = "update"
+          http_method = "POST"
+          invoke_arn  = aws_lambda_function.user["update"].invoke_arn
+        },
+        {
+          name        = "all"
+          path_part   = "all"
+          http_method = "GET"
+          invoke_arn  = aws_lambda_function.user["all"].invoke_arn
+        },
       ]
     }
     friends = {
@@ -67,16 +58,18 @@ locals {
   }
 }
 
-module "api_services" {
-  source   = "git::https://github.com/domgiordano/api-gateway-service.git?ref=v1.0.0"
-  for_each = local.api_services
+# Custom domain (project-specific, outside the module)
+resource "aws_api_gateway_domain_name" "api_domain" {
+  domain_name              = "api.myapp.com"
+  regional_certificate_arn = aws_acm_certificate.cert.arn
+  security_policy          = "TLS_1_2"
+  endpoint_configuration { types = ["REGIONAL"] }
+}
 
-  rest_api_id      = aws_api_gateway_rest_api.api.id
-  root_resource_id = aws_api_gateway_rest_api.api.root_resource_id
-  path_prefix      = each.value.path_prefix
-  endpoints        = each.value.endpoints
-  authorizer_id    = aws_api_gateway_authorizer.auth.id
-  execution_arn    = aws_api_gateway_rest_api.api.execution_arn
+resource "aws_api_gateway_base_path_mapping" "mapping" {
+  api_id      = module.api.rest_api_id
+  domain_name = aws_api_gateway_domain_name.api_domain.domain_name
+  stage_name  = module.api.stage_name
 }
 ```
 
@@ -84,24 +77,41 @@ module "api_services" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `rest_api_id` | The ID of the REST API Gateway | `string` | — | yes |
-| `root_resource_id` | The root resource ID of the REST API Gateway | `string` | — | yes |
-| `path_prefix` | Top-level path for this service (e.g., `user`, `friends`) | `string` | — | yes |
-| `endpoints` | List of endpoint definitions (see below) | `list(object)` | — | yes |
-| `execution_arn` | Execution ARN of the REST API (for Lambda permissions) | `string` | — | yes |
-| `authorization` | Authorization type: `NONE`, `CUSTOM`, `AWS_IAM`, `COGNITO_USER_POOLS` | `string` | `"CUSTOM"` | no |
-| `authorizer_id` | Authorizer ID for `CUSTOM` or `COGNITO_USER_POOLS` auth | `string` | `""` | no |
+| `app_name` | Application name for resource naming | `string` | — | yes |
+| `services` | Map of services with endpoints (see below) | `map(object)` | — | yes |
+| `stage_name` | Stage name (e.g., dev, prod) | `string` | `"dev"` | no |
+| `tags` | Tags applied to all resources | `map(string)` | `{}` | no |
+| `authorization` | Auth type: `NONE`, `CUSTOM`, `AWS_IAM`, `COGNITO_USER_POOLS` | `string` | `"CUSTOM"` | no |
+| `authorizer_invoke_arn` | Lambda authorizer invoke ARN (required when auth=CUSTOM) | `string` | `""` | no |
+| `authorizer_role_arn` | IAM role ARN for authorizer (required when auth=CUSTOM) | `string` | `""` | no |
+| `endpoint_type` | API endpoint type: `REGIONAL` or `EDGE` | `string` | `"REGIONAL"` | no |
+| `binary_media_types` | Binary media types for the REST API | `list(string)` | `["multipart/form-data"]` | no |
+| `minimum_compression_size` | Min response size (bytes) to compress | `number` | `5242880` | no |
+| `logging_level` | CloudWatch logging: `OFF`, `ERROR`, `INFO` | `string` | `"INFO"` | no |
+| `metrics_enabled` | Enable CloudWatch metrics | `bool` | `true` | no |
+| `data_trace_enabled` | Enable full request/response logging | `bool` | `true` | no |
+| `throttling_rate_limit` | Requests per second limit | `number` | `100` | no |
+| `throttling_burst_limit` | Burst request limit | `number` | `50` | no |
+| `log_retention_days` | Log group retention in days | `number` | `14` | no |
+| `access_log_format` | Custom access log format (empty for default) | `string` | `""` | no |
 | `allow_headers` | CORS allowed headers | `list(string)` | `["Authorization", "Content-Type", ...]` | no |
-| `allow_origin` | CORS allowed origin(s), comma-delimited for multiple | `string` | `"*"` | no |
+| `allow_origin` | CORS origin(s), comma-delimited for multiple | `string` | `"*"` | no |
 
-### Endpoint object shape
+### Service and endpoint shape
 
 ```hcl
-{
-  name        = string  # Unique identifier for the endpoint
-  path_part   = string  # URL path segment (e.g., "update", "all")
-  http_method = string  # HTTP method (GET, POST, PUT, DELETE)
-  invoke_arn  = string  # Lambda function invoke ARN
+services = {
+  service_name = {
+    path_prefix = string   # URL path (e.g., "user", "friends")
+    endpoints = [
+      {
+        name        = string  # Unique ID within the service
+        path_part   = string  # URL segment (e.g., "update")
+        http_method = string  # GET, POST, PUT, DELETE
+        invoke_arn  = string  # Lambda invoke ARN
+      }
+    ]
+  }
 }
 ```
 
@@ -109,18 +119,28 @@ module "api_services" {
 
 | Name | Description |
 |------|-------------|
-| `parent_resource_id` | Resource ID of the parent path |
-| `endpoint_resource_ids` | Map of endpoint name to API Gateway resource ID |
+| `rest_api_id` | REST API ID (for domain mappings, WAF, etc.) |
+| `rest_api_execution_arn` | Execution ARN of the REST API |
+| `rest_api_root_resource_id` | Root resource ID |
+| `stage_name` | Deployed stage name |
+| `stage_invoke_url` | Stage invoke URL |
+| `authorizer_id` | Authorizer ID (empty if auth != CUSTOM) |
+| `service_resource_ids` | Map of service name to parent resource ID |
+| `endpoint_resource_ids` | Map of "service/endpoint" to resource ID |
+
+## What stays outside the module
+
+These are project-specific and should be defined in your project's Terraform:
+
+- **Custom domain** (`aws_api_gateway_domain_name` + `aws_api_gateway_base_path_mapping`)
+- **ACM certificate** and Route53 DNS records
+- **WAF** association (`aws_wafv2_web_acl_association`)
+- **API Gateway account** CloudWatch role (`aws_api_gateway_account`) — account-level singleton
+- **Authorizer Lambda function** — the Lambda itself with your custom auth code
 
 ## CORS
 
-The module automatically creates OPTIONS preflight handlers for each endpoint with:
-- `Access-Control-Allow-Headers` — configurable via `allow_headers`
-- `Access-Control-Allow-Methods` — auto-set to the endpoint's HTTP method + OPTIONS
-- `Access-Control-Allow-Origin` — configurable via `allow_origin`
-- `Access-Control-Allow-Credentials` — always `true`
-
-For multi-origin CORS, pass a comma-delimited string to `allow_origin` (e.g., `"https://app.example.com,https://staging.example.com"`). The module uses VTL response templates to dynamically match the request origin.
+OPTIONS preflight handlers are automatically created for every endpoint with configurable headers and origins. For multi-origin CORS, pass a comma-delimited string to `allow_origin`. Gateway responses (4XX/5XX) also include CORS headers.
 
 ## Requirements
 
