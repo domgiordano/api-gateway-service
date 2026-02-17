@@ -28,9 +28,14 @@ output "stage_arn" {
   value       = aws_api_gateway_stage.stage.arn
 }
 
-output "regional_domain_name" {
-  description = "Regional domain name for custom domain mapping"
-  value       = aws_api_gateway_rest_api.api.id
+output "domain_regional_domain_name" {
+  description = "Regional domain name of the custom domain (for Route53 alias)"
+  value       = var.domain_name != "" ? aws_api_gateway_domain_name.domain[0].regional_domain_name : ""
+}
+
+output "domain_regional_zone_id" {
+  description = "Regional hosted zone ID of the custom domain (for Route53 alias)"
+  value       = var.domain_name != "" ? aws_api_gateway_domain_name.domain[0].regional_zone_id : ""
 }
 
 output "authorizer_id" {

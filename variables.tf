@@ -59,6 +59,22 @@ variable "authorizer_role_arn" {
 }
 
 ############################
+# Custom Domain (optional)
+############################
+
+variable "domain_name" {
+  description = "Custom domain name for the API (e.g., api.myapp.com). Leave empty to skip."
+  type        = string
+  default     = ""
+}
+
+variable "certificate_arn" {
+  description = "ACM certificate ARN for the custom domain. Required if domain_name is set."
+  type        = string
+  default     = ""
+}
+
+############################
 # REST API Configuration
 ############################
 
