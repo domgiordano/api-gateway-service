@@ -1,6 +1,6 @@
 # api-gateway-service
 
-Reusable Terraform module that creates a complete AWS API Gateway REST API stack with Lambda (AWS_PROXY) integration, CORS, authorization, logging, and throttling.
+Reusable Terraform module that creates a complete AWS API Gateway REST API stack with Lambda (AWS_PROXY) integration, CORS, authorization, custom domain, logging, and throttling.
 
 ## What it creates
 
@@ -10,6 +10,7 @@ Reusable Terraform module that creates a complete AWS API Gateway REST API stack
 - Stage and auto-deploying deployment
 - Method settings (logging, metrics, throttling)
 - Gateway responses for 4XX/5XX with CORS headers
+- Custom domain name and base path mapping (optional)
 - Per-service parent resources with child endpoints
 - OPTIONS preflight handlers with CORS on every endpoint
 - Lambda invoke permissions for all endpoints
@@ -18,13 +19,17 @@ Reusable Terraform module that creates a complete AWS API Gateway REST API stack
 
 ```hcl
 module "api" {
-  source = "git::https://github.com/domgiordano/api-gateway-service.git?ref=v2.0.0"
+  source = "git::https://github.com/domgiordano/api-gateway-service.git?ref=v2.1.0"
 
   app_name              = "myapp"
   stage_name            = "dev"
   authorizer_invoke_arn = aws_lambda_function.authorizer.invoke_arn
   authorizer_role_arn   = aws_iam_role.lambda_role.arn
   tags                  = { source = "terraform", app_name = "myapp" }
+
+  # Custom domain (optional)
+  domain_name     = "myapp.com"
+  certificate_arn = aws_acm_certificate.cert.arn
 
   services = {
     user = {
@@ -57,20 +62,6 @@ module "api" {
     }
   }
 }
-
-# Custom domain (project-specific, outside the module)
-resource "aws_api_gateway_domain_name" "api_domain" {
-  domain_name              = "api.myapp.com"
-  regional_certificate_arn = aws_acm_certificate.cert.arn
-  security_policy          = "TLS_1_2"
-  endpoint_configuration { types = ["REGIONAL"] }
-}
-
-resource "aws_api_gateway_base_path_mapping" "mapping" {
-  api_id      = module.api.rest_api_id
-  domain_name = aws_api_gateway_domain_name.api_domain.domain_name
-  stage_name  = module.api.stage_name
-}
 ```
 
 ## Inputs
@@ -84,6 +75,8 @@ resource "aws_api_gateway_base_path_mapping" "mapping" {
 | `authorization` | Auth type: `NONE`, `CUSTOM`, `AWS_IAM`, `COGNITO_USER_POOLS` | `string` | `"CUSTOM"` | no |
 | `authorizer_invoke_arn` | Lambda authorizer invoke ARN (required when auth=CUSTOM) | `string` | `""` | no |
 | `authorizer_role_arn` | IAM role ARN for authorizer (required when auth=CUSTOM) | `string` | `""` | no |
+| `domain_name` | Custom domain name for the API. Leave empty to skip. | `string` | `""` | no |
+| `certificate_arn` | ACM certificate ARN for the custom domain. Required if domain_name is set. | `string` | `""` | no |
 | `endpoint_type` | API endpoint type: `REGIONAL` or `EDGE` | `string` | `"REGIONAL"` | no |
 | `binary_media_types` | Binary media types for the REST API | `list(string)` | `["multipart/form-data"]` | no |
 | `minimum_compression_size` | Min response size (bytes) to compress | `number` | `5242880` | no |
@@ -119,11 +112,14 @@ services = {
 
 | Name | Description |
 |------|-------------|
-| `rest_api_id` | REST API ID (for domain mappings, WAF, etc.) |
+| `rest_api_id` | REST API ID (for WAF, etc.) |
 | `rest_api_execution_arn` | Execution ARN of the REST API |
 | `rest_api_root_resource_id` | Root resource ID |
 | `stage_name` | Deployed stage name |
 | `stage_invoke_url` | Stage invoke URL |
+| `stage_arn` | Stage ARN (for WAF associations, etc.) |
+| `domain_regional_domain_name` | Regional domain name of the custom domain (for Route53 alias) |
+| `domain_regional_zone_id` | Regional hosted zone ID of the custom domain (for Route53 alias) |
 | `authorizer_id` | Authorizer ID (empty if auth != CUSTOM) |
 | `service_resource_ids` | Map of service name to parent resource ID |
 | `endpoint_resource_ids` | Map of "service/endpoint" to resource ID |
@@ -132,9 +128,9 @@ services = {
 
 These are project-specific and should be defined in your project's Terraform:
 
-- **Custom domain** (`aws_api_gateway_domain_name` + `aws_api_gateway_base_path_mapping`)
-- **ACM certificate** and Route53 DNS records
-- **WAF** association (`aws_wafv2_web_acl_association`)
+- **Route53 DNS record** for the custom domain (use `domain_regional_domain_name` and `domain_regional_zone_id` outputs)
+- **ACM certificate** and DNS validation records
+- **WAF** association (`aws_wafv2_web_acl_association` using `stage_arn` output)
 - **API Gateway account** CloudWatch role (`aws_api_gateway_account`) — account-level singleton
 - **Authorizer Lambda function** — the Lambda itself with your custom auth code
 
