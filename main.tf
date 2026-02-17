@@ -30,7 +30,7 @@ resource "aws_lambda_permission" "authorizer" {
   count         = var.authorization == "CUSTOM" ? 1 : 0
   statement_id  = "AllowExecFromAPIGateway"
   action        = "lambda:InvokeFunction"
-  function_name = split(":", var.authorizer_invoke_arn)[6]
+  function_name = regex("function:([^/]+)", var.authorizer_invoke_arn)[0]
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*"
 }
@@ -275,7 +275,7 @@ resource "aws_lambda_permission" "invoke" {
   for_each      = local.all_endpoints
   statement_id  = "Allow${replace(title(each.value.path_prefix), "-", "")}${title(each.value.name)}Api"
   action        = "lambda:InvokeFunction"
-  function_name = split(":", each.value.invoke_arn)[6]
+  function_name = regex("function:([^/]+)", each.value.invoke_arn)[0]
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/*"
 }
