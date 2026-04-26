@@ -19,7 +19,7 @@ Reusable Terraform module that creates a complete AWS API Gateway REST API stack
 
 ```hcl
 module "api" {
-  source = "git::https://github.com/domgiordano/api-gateway-service.git?ref=v2.1.0"
+  source = "git::https://github.com/domgiordano/api-gateway-service.git?ref=v2.3.0"
 
   app_name              = "myapp"
   stage_name            = "dev"
@@ -72,7 +72,7 @@ module "api" {
 | `services` | Map of services with endpoints (see below) | `map(object)` | — | yes |
 | `stage_name` | Stage name (e.g., dev, prod) | `string` | `"dev"` | no |
 | `tags` | Tags applied to all resources | `map(string)` | `{}` | no |
-| `authorization` | Auth type: `NONE`, `CUSTOM`, `AWS_IAM`, `COGNITO_USER_POOLS` | `string` | `"CUSTOM"` | no |
+| `authorization` | Module-level auth type: `NONE`, `CUSTOM`, `AWS_IAM`, `COGNITO_USER_POOLS`. Per-endpoint `authorization` overrides this. | `string` | `"CUSTOM"` | no |
 | `authorizer_invoke_arn` | Lambda authorizer invoke ARN (required when auth=CUSTOM) | `string` | `""` | no |
 | `authorizer_role_arn` | IAM role ARN for authorizer (required when auth=CUSTOM) | `string` | `""` | no |
 | `domain_name` | Custom domain name for the API. Leave empty to skip. | `string` | `""` | no |
@@ -98,12 +98,49 @@ services = {
     path_prefix = string   # URL path (e.g., "user", "friends")
     endpoints = [
       {
-        name        = string  # Unique ID within the service
-        path_part   = string  # URL segment (e.g., "update")
-        http_method = string  # GET, POST, PUT, DELETE
-        invoke_arn  = string  # Lambda invoke ARN
+        name          = string           # Unique ID within the service
+        path_part     = string           # URL segment (e.g., "update")
+        http_method   = string           # GET, POST, PUT, DELETE
+        invoke_arn    = string           # Lambda invoke ARN
+        authorization = optional(string) # Per-endpoint override of var.authorization (NONE/CUSTOM/...). Omit to inherit.
       }
     ]
+  }
+}
+```
+
+### Mixed-auth example (public `/auth/login` alongside CUSTOM-auth routes)
+
+```hcl
+module "api" {
+  source        = "git::https://github.com/domgiordano/api-gateway-service.git?ref=v2.3.0"
+  authorization = "CUSTOM"   # Default for endpoints that don't override
+
+  services = {
+    auth = {
+      path_prefix = "auth"
+      endpoints = [
+        {
+          name          = "login"
+          path_part     = "login"
+          http_method   = "POST"
+          invoke_arn    = aws_lambda_function.auth_login.invoke_arn
+          authorization = "NONE"   # This endpoint is public
+        }
+      ]
+    }
+    user = {
+      path_prefix = "user"
+      endpoints = [
+        {
+          name        = "all"
+          path_part   = "all"
+          http_method = "GET"
+          invoke_arn  = aws_lambda_function.user_all.invoke_arn
+          # Inherits var.authorization = CUSTOM
+        }
+      ]
+    }
   }
 }
 ```
@@ -142,5 +179,5 @@ OPTIONS preflight handlers are automatically created for every endpoint with con
 
 | Name | Version |
 |------|---------|
-| Terraform | >= 1.0 |
+| Terraform | >= 1.3 (uses `optional()` in object types) |
 | AWS Provider | >= 4.0 |

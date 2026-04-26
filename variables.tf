@@ -24,14 +24,15 @@ variable "tags" {
 ############################
 
 variable "services" {
-  description = "Map of API services. Each service creates a parent path with child endpoints."
+  description = "Map of API services. Each service creates a parent path with child endpoints. Per-endpoint `authorization` overrides the module-level `var.authorization`; omit to inherit."
   type = map(object({
     path_prefix = string
     endpoints = list(object({
-      name        = string
-      path_part   = string
-      http_method = string
-      invoke_arn  = string
+      name          = string
+      path_part     = string
+      http_method   = string
+      invoke_arn    = string
+      authorization = optional(string)
     }))
   }))
 }

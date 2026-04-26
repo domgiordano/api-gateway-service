@@ -25,8 +25,8 @@ resource "aws_api_gateway_method" "endpoint" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.endpoint[each.key].id
   http_method   = each.value.http_method
-  authorization = var.authorization
-  authorizer_id = var.authorization == "CUSTOM" ? aws_api_gateway_authorizer.authorizer[0].id : null
+  authorization = each.value.authorization
+  authorizer_id = each.value.authorization == "CUSTOM" ? aws_api_gateway_authorizer.authorizer[0].id : null
 }
 
 resource "aws_api_gateway_integration" "endpoint" {
