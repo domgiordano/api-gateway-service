@@ -3,11 +3,14 @@
 #######################################
 
 resource "aws_api_gateway_authorizer" "authorizer" {
-  count                  = var.authorization == "CUSTOM" ? 1 : 0
-  name                   = "${var.app_name}-Api-Gateway-Lambda-Authorizer"
-  rest_api_id            = aws_api_gateway_rest_api.api.id
-  authorizer_uri         = var.authorizer_invoke_arn
-  authorizer_credentials = var.authorizer_role_arn
+  count                            = var.authorization == "CUSTOM" ? 1 : 0
+  name                             = "${var.app_name}-Api-Gateway-Lambda-Authorizer"
+  rest_api_id                      = aws_api_gateway_rest_api.api.id
+  authorizer_uri                   = var.authorizer_invoke_arn
+  authorizer_credentials           = var.authorizer_role_arn
+  type                             = var.authorizer_type
+  identity_source                  = var.authorizer_identity_source
+  authorizer_result_ttl_in_seconds = var.authorizer_result_ttl_in_seconds
 }
 
 resource "aws_lambda_permission" "authorizer" {

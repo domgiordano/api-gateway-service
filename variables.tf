@@ -59,6 +59,28 @@ variable "authorizer_role_arn" {
   default     = ""
 }
 
+variable "authorizer_type" {
+  description = "API Gateway authorizer type. TOKEN, REQUEST, or COGNITO_USER_POOLS. Use REQUEST for cookie-based auth."
+  type        = string
+  default     = "TOKEN"
+  validation {
+    condition     = contains(["TOKEN", "REQUEST", "COGNITO_USER_POOLS"], var.authorizer_type)
+    error_message = "authorizer_type must be one of TOKEN, REQUEST, COGNITO_USER_POOLS."
+  }
+}
+
+variable "authorizer_identity_source" {
+  description = "Comma-delimited identity sources for the authorizer. For TOKEN: 'method.request.header.Authorization'. For REQUEST with cookies: 'method.request.header.Cookie'. Multiple sources allowed for REQUEST: 'method.request.header.Cookie,method.request.header.Authorization'."
+  type        = string
+  default     = "method.request.header.Authorization"
+}
+
+variable "authorizer_result_ttl_in_seconds" {
+  description = "How long API Gateway caches authorizer responses. 0 disables caching (recommended for cookie-based auth that may rotate)."
+  type        = number
+  default     = 300
+}
+
 ############################
 # Custom Domain (optional)
 ############################
