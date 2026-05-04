@@ -27,4 +27,10 @@ locals {
       }
     }
   ]...)
+
+  # True when the module-level default OR any per-endpoint override needs the
+  # COGNITO_USER_POOLS authorizer. Drives count on aws_api_gateway_authorizer.cognito.
+  needs_cognito_authorizer = var.authorization == "COGNITO_USER_POOLS" || anytrue([
+    for ep in local.all_endpoints : ep.authorization == "COGNITO_USER_POOLS"
+  ])
 }

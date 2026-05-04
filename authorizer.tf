@@ -21,3 +21,20 @@ resource "aws_lambda_permission" "authorizer" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*"
 }
+
+#######################################
+# Cognito User Pools authorizer
+#
+# Created when var.authorization == "COGNITO_USER_POOLS" or any endpoint
+# sets authorization = "COGNITO_USER_POOLS". Coexists with the CUSTOM
+# authorizer above so a single API can mix auth types per endpoint.
+#######################################
+
+resource "aws_api_gateway_authorizer" "cognito" {
+  count           = local.needs_cognito_authorizer ? 1 : 0
+  name            = "${var.app_name}-Api-Gateway-Cognito-Authorizer"
+  rest_api_id     = aws_api_gateway_rest_api.api.id
+  type            = "COGNITO_USER_POOLS"
+  provider_arns   = var.cognito_user_pool_arns
+  identity_source = "method.request.header.Authorization"
+}

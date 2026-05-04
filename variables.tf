@@ -81,6 +81,12 @@ variable "authorizer_result_ttl_in_seconds" {
   default     = 300
 }
 
+variable "cognito_user_pool_arns" {
+  description = "List of Cognito User Pool ARNs to associate with the API Gateway COGNITO_USER_POOLS authorizer. Required when var.authorization == \"COGNITO_USER_POOLS\" or any endpoint sets authorization = \"COGNITO_USER_POOLS\"."
+  type        = list(string)
+  default     = []
+}
+
 ############################
 # Custom Domain (optional)
 ############################

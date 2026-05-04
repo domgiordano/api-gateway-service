@@ -19,7 +19,7 @@ Reusable Terraform module that creates a complete AWS API Gateway REST API stack
 
 ```hcl
 module "api" {
-  source = "git::https://github.com/domgiordano/api-gateway-service.git?ref=v2.3.0"
+  source = "git::https://github.com/domgiordano/api-gateway-service.git?ref=v2.5.0"
 
   app_name              = "myapp"
   stage_name            = "dev"
@@ -75,6 +75,10 @@ module "api" {
 | `authorization` | Module-level auth type: `NONE`, `CUSTOM`, `AWS_IAM`, `COGNITO_USER_POOLS`. Per-endpoint `authorization` overrides this. | `string` | `"CUSTOM"` | no |
 | `authorizer_invoke_arn` | Lambda authorizer invoke ARN (required when auth=CUSTOM) | `string` | `""` | no |
 | `authorizer_role_arn` | IAM role ARN for authorizer (required when auth=CUSTOM) | `string` | `""` | no |
+| `authorizer_type` | Authorizer type for CUSTOM auth: `TOKEN`, `REQUEST`, or `COGNITO_USER_POOLS` | `string` | `"TOKEN"` | no |
+| `authorizer_identity_source` | Identity source(s) for the CUSTOM authorizer (comma-delimited) | `string` | `"method.request.header.Authorization"` | no |
+| `authorizer_result_ttl_in_seconds` | CUSTOM authorizer result cache TTL | `number` | `300` | no |
+| `cognito_user_pool_arns` | Cognito User Pool ARNs (required when auth=COGNITO_USER_POOLS or any endpoint sets it) | `list(string)` | `[]` | no |
 | `domain_name` | Custom domain name for the API. Leave empty to skip. | `string` | `""` | no |
 | `certificate_arn` | ACM certificate ARN for the custom domain. Required if domain_name is set. | `string` | `""` | no |
 | `endpoint_type` | API endpoint type: `REGIONAL` or `EDGE` | `string` | `"REGIONAL"` | no |
@@ -113,7 +117,7 @@ services = {
 
 ```hcl
 module "api" {
-  source        = "git::https://github.com/domgiordano/api-gateway-service.git?ref=v2.3.0"
+  source        = "git::https://github.com/domgiordano/api-gateway-service.git?ref=v2.5.0"
   authorization = "CUSTOM"   # Default for endpoints that don't override
 
   services = {
@@ -144,6 +148,36 @@ module "api" {
   }
 }
 ```
+
+### Cognito User Pools example
+
+Authenticates every method against a shared Cognito User Pool. Callers send a JWT in the `Authorization` header.
+
+```hcl
+module "api" {
+  source        = "git::https://github.com/domgiordano/api-gateway-service.git?ref=v2.5.0"
+  app_name      = "myapp"
+  authorization = "COGNITO_USER_POOLS"
+
+  cognito_user_pool_arns = [data.aws_ssm_parameter.shared_pool_arn.value]
+
+  services = {
+    user = {
+      path_prefix = "user"
+      endpoints = [
+        {
+          name        = "me"
+          path_part   = "me"
+          http_method = "GET"
+          invoke_arn  = aws_lambda_function.user_me.invoke_arn
+        },
+      ]
+    }
+  }
+}
+```
+
+Per-endpoint mixing (e.g., a Cognito-protected `/users/me` next to a public `/auth/login`) works the same way: set `authorization = "COGNITO_USER_POOLS"` on the endpoints that need it and `authorization = "NONE"` on the public ones, while still passing `cognito_user_pool_arns`.
 
 ## Outputs
 
