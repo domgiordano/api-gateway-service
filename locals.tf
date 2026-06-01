@@ -1,23 +1,26 @@
 locals {
   origins_list = split(",", var.allow_origin)
 
-  # CORS multi-origin VTL. For each non-primary origin, emit a properly-closed
-  # #if/#end block. Old versions accidentally generated only ONE #end across all
-  # the #if checks, which API Gateway's VTL parser rejected with 500 — that
-  # bug only manifested when allow_origin had multiple values.
-  cors_vtl = length(local.origins_list) > 1 ? join("\n", concat(
+  # CORS origin VTL. The Access-Control-Allow-Origin header is set ONLY here, via
+  # $context.responseOverride — it must NOT also be mapped in the OPTIONS
+  # integration response's response_parameters, or API Gateway returns a runtime
+  # 500 ("Output mapping refused") whenever the override actually fires (i.e. for
+  # any non-primary origin). Default to the primary origin, then echo whichever
+  # configured origin matches the request. Always emitted (works for 1+ origins).
+  cors_vtl = join("\n", concat(
     [
       "#set($origin = $input.params().header.get(\"Origin\"))",
       "#if($origin == \"\") #set($origin = $input.params().header.get(\"origin\")) #end",
+      "#set($context.responseOverride.header.Access-Control-Allow-Origin = \"${local.origins_list[0]}\")",
     ],
     flatten([
-      for o in slice(local.origins_list, 1, length(local.origins_list)) : [
+      for o in local.origins_list : [
         "#if($origin == \"${o}\")",
         "  #set($context.responseOverride.header.Access-Control-Allow-Origin = $origin)",
         "#end",
       ]
     ]),
-  )) : ""
+  ))
 
   default_access_log_format = "$context.identity.sourceIp $context.identity.caller $context.identity.user [$context.requestTime] \"$context.httpMethod $context.resourcePath $context.protocol\" $context.status $context.responseLength $context.requestId $context.extendedRequestId"
   access_log_format         = var.access_log_format != "" ? var.access_log_format : local.default_access_log_format

@@ -53,9 +53,11 @@ resource "aws_api_gateway_integration_response" "options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers"     = "'${join(",", var.allow_headers)}'"
     "method.response.header.Access-Control-Allow-Methods"     = "'${each.value.http_method},OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin"      = "'${local.origins_list[0]}'"
     "method.response.header.Access-Control-Allow-Credentials" = "'true'"
   }
+  # Access-Control-Allow-Origin is intentionally NOT mapped here — it is set
+  # exclusively via $context.responseOverride in local.cors_vtl. Mapping it both
+  # ways makes API Gateway 500 when the override fires (see locals.tf).
 
   response_templates = {
     "application/json" = local.cors_vtl
