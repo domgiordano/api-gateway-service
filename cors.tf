@@ -8,6 +8,13 @@ resource "aws_api_gateway_method" "options" {
   resource_id   = aws_api_gateway_resource.endpoint[each.key].id
   http_method   = "OPTIONS"
   authorization = "NONE"
+
+  # Origin has to be declared here before the integration below can map it in.
+  # Not required (false): a request without Origin is not a preflight, and the
+  # VTL already falls back to the primary origin.
+  request_parameters = {
+    "method.request.header.Origin" = false
+  }
 }
 
 resource "aws_api_gateway_integration" "options" {
@@ -16,6 +23,14 @@ resource "aws_api_gateway_integration" "options" {
   resource_id = aws_api_gateway_resource.endpoint[each.key].id
   http_method = aws_api_gateway_method.options[each.key].http_method
   type        = "MOCK"
+
+  # Without this, $input.params().header is EMPTY in the response template
+  # below. A MOCK integration receives only what is mapped into it -- its
+  # request is the static template, not the caller's request -- so every
+  # .get("Origin") returned null and the multi-origin echo could never match.
+  request_parameters = {
+    "integration.request.header.Origin" = "method.request.header.Origin"
+  }
 
   request_templates = {
     "application/json" = "{ \"statusCode\": 200 }"
