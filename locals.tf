@@ -7,10 +7,19 @@ locals {
   # 500 ("Output mapping refused") whenever the override actually fires (i.e. for
   # any non-primary origin). Default to the primary origin, then echo whichever
   # configured origin matches the request. Always emitted (works for 1+ origins).
+  #
+  # The lowercase fallback is guarded with #if(!$origin), NOT #if($origin == "").
+  # A missing key in the header map returns NULL, and in Velocity null == "" is
+  # false — so the old check never fired and the fallback never ran. That mattered
+  # everywhere, because an edge-optimized custom domain puts CloudFront in front
+  # and CloudFront lowercases header names: .get("Origin") was always null, and a
+  # null never equals any configured origin, so every preflight got the primary
+  # origin back and multi-origin echo silently did nothing.
   cors_vtl = join("\n", concat(
     [
       "#set($origin = $input.params().header.get(\"Origin\"))",
-      "#if($origin == \"\") #set($origin = $input.params().header.get(\"origin\")) #end",
+      "#if(!$origin) #set($origin = $input.params().header.get(\"origin\")) #end",
+      "#if(!$origin) #set($origin = \"\") #end",
       "#set($context.responseOverride.header.Access-Control-Allow-Origin = \"${local.origins_list[0]}\")",
     ],
     flatten([
