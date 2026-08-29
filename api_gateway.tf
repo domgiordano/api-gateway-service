@@ -32,26 +32,50 @@ resource "aws_api_gateway_stage" "stage" {
 
 resource "aws_api_gateway_deployment" "deploy" {
   rest_api_id = aws_api_gateway_rest_api.api.id
-  description = "Deployed at ${timestamp()}"
+  description = "Managed by Terraform"
 
-  variables = {
-    integrations = "Deployed at: ${timestamp()}"
-  }
-
+  # A deployment is a snapshot of the API, so it must be replaced exactly when
+  # the API it would snapshot changes, and not otherwise.
+  #
+  # This hashed `timestamp()` until v2.8.0. That is evaluated at plan time and
+  # always differs, so every plan in every consuming repo proposed a
+  # replacement whether or not anything had changed. The cost was never the
+  # redeploy — it was that no plan was ever clean, so genuine drift had nowhere
+  # to show. Six tables in one consumer sat with deletion protection merged and
+  # unapplied for weeks underneath exactly that noise.
+  #
+  # Everything a deployment captures is listed below, and the list has to stay
+  # complete. A missing entry is the dangerous failure here: a real API change
+  # would stop triggering a redeploy and nothing would say so, which is worse
+  # than the noise this replaces. Add to it when adding a resource that shapes
+  # the API surface.
+  #
+  # Stage-level things are deliberately absent — the stage, its method settings,
+  # the domain and its base path mapping all apply without a deployment.
   triggers = {
-    redeployment = sha1(jsonencode([timestamp()]))
+    redeployment = sha1(jsonencode([
+      aws_api_gateway_rest_api.api,
+      aws_api_gateway_resource.service,
+      aws_api_gateway_resource.endpoint,
+      aws_api_gateway_method.endpoint,
+      aws_api_gateway_integration.endpoint,
+      aws_api_gateway_method.options,
+      aws_api_gateway_integration.options,
+      aws_api_gateway_method_response.options,
+      aws_api_gateway_integration_response.options,
+      aws_api_gateway_authorizer.authorizer,
+      aws_api_gateway_authorizer.cognito,
+      aws_api_gateway_gateway_response.response_4xx,
+      aws_api_gateway_gateway_response.response_5xx,
+    ]))
   }
 
   lifecycle {
     create_before_destroy = true
   }
 
-  depends_on = [
-    aws_api_gateway_method.endpoint,
-    aws_api_gateway_integration.endpoint,
-    aws_api_gateway_method.options,
-    aws_api_gateway_integration.options,
-  ]
+  # `depends_on` is gone because the triggers above reference every resource it
+  # named, and more, so Terraform already orders this after all of them.
 }
 
 #######################################
